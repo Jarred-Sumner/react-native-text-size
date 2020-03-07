@@ -179,6 +179,124 @@ class RNTextSizeModule extends ReactContextBaseJavaModule {
         }
     }
 
+    @SuppressWarnings("unused")
+    @ReactMethod(isBlockingSynchronousMethod = true)
+    public WritableMap measureSync(@Nullable final ReadableMap specs) {
+        final RNTextSizeConf conf = getConf(specs, promise, true);
+        if (conf == null) {
+            return null;
+        }
+
+        final String _text = conf.getString("text");
+        if (_text == null) {
+            promise.reject(E_MISSING_TEXT, "Missing required text.");
+            return null;
+        }
+
+        final float density = getCurrentDensity();
+        final float width = conf.getWidth(density);
+        final boolean includeFontPadding = conf.includeFontPadding;
+
+        final WritableMap result = Arguments.createMap();
+        if (_text.isEmpty()) {
+            result.putInt("width", 0);
+            result.putDouble("height", minimalHeight(density, includeFontPadding));
+            result.putInt("lastLineWidth", 0);
+            result.putInt("lineCount", 0);
+            return result;
+        }
+
+        final SpannableString text = (SpannableString) RNTextSizeSpannedText
+                .spannedFromSpecsAndText(mReactContext, conf, new SpannableString(_text));
+
+        final TextPaint textPaint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
+        Layout layout = null;
+        try {
+            final BoringLayout.Metrics boring = BoringLayout.isBoring(text, textPaint);
+            int hintWidth = (int) width;
+
+            if (boring == null) {
+                // Not boring, ie. the text is multiline or contains unicode characters.
+                final float desiredWidth = Layout.getDesiredWidth(text, textPaint);
+                if (desiredWidth <= width) {
+                    hintWidth = (int) Math.ceil(desiredWidth);
+                }
+            } else if (boring.width <= width) {
+                // Single-line and width unknown or bigger than the width of the text.
+                layout = BoringLayout.make(
+                        text,
+                        textPaint,
+                        boring.width,
+                        Layout.Alignment.ALIGN_NORMAL,
+                        SPACING_MULTIPLIER,
+                        SPACING_ADDITION,
+                        boring,
+                        includeFontPadding);
+            }
+
+            if (layout == null) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    layout = StaticLayout.Builder.obtain(text, 0, text.length(), textPaint, hintWidth)
+                            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                            .setBreakStrategy(conf.getTextBreakStrategy())
+                            .setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NORMAL)
+                            .setIncludePad(includeFontPadding)
+                            .setLineSpacing(SPACING_ADDITION, SPACING_MULTIPLIER)
+                            .build();
+                } else {
+                    layout = new StaticLayout(
+                            text,
+                            textPaint,
+                            hintWidth,
+                            Layout.Alignment.ALIGN_NORMAL,
+                            SPACING_MULTIPLIER,
+                            SPACING_ADDITION,
+                            includeFontPadding
+                    );
+                }
+            }
+
+            final int lineCount = layout.getLineCount();
+            float rectWidth;
+
+            if (conf.getBooleanOrTrue("usePreciseWidth")) {
+                float lastWidth = 0f;
+                // Layout.getWidth() returns the configured max width, we must
+                // go slow to get the used one (and with the text trimmed).
+                rectWidth = 0f;
+                for (int i = 0; i < lineCount; i++) {
+                    lastWidth = layout.getLineMax(i);
+                    if (lastWidth > rectWidth) {
+                        rectWidth = lastWidth;
+                    }
+                }
+                result.putDouble("lastLineWidth", lastWidth / density);
+            } else {
+                rectWidth = layout.getWidth();
+            }
+
+            result.putDouble("width", Math.min(rectWidth / density, width));
+            result.putDouble("height", layout.getHeight() / density);
+            result.putInt("lineCount", lineCount);
+
+            Integer lineInfoForLine = conf.getIntOrNull("lineInfoForLine");
+            if (lineInfoForLine != null && lineInfoForLine >= 0) {
+                final int line = Math.min(lineInfoForLine, lineCount);
+                final WritableMap info = Arguments.createMap();
+                info.putInt("line", line);
+                info.putInt("start", layout.getLineStart(line));
+                info.putInt("end", layout.getLineVisibleEnd(line));
+                info.putDouble("bottom", layout.getLineBottom(line) / density);
+                info.putDouble("width", layout.getLineMax(line) / density);
+                result.putMap("lineInfo", info);
+            }
+
+            return result;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     // https://stackoverflow.com/questions/3654321/measuring-text-height-to-be-drawn-on-canvas-android
     @SuppressWarnings("unused")
     @ReactMethod
