@@ -189,7 +189,7 @@ class RNTextSizeModule extends ReactContextBaseJavaModule {
 
         final String _text = conf.getString("text");
         if (_text == null) {
-            promise.reject(E_MISSING_TEXT, "Missing required text.");
+
             return null;
         }
 
