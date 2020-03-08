@@ -182,7 +182,7 @@ class RNTextSizeModule extends ReactContextBaseJavaModule {
     @SuppressWarnings("unused")
     @ReactMethod(isBlockingSynchronousMethod = true)
     public WritableMap measureSync(@Nullable final ReadableMap specs) {
-        final RNTextSizeConf conf = getConf(specs, promise, true);
+        final RNTextSizeConf conf = new RNTextSizeConf(specs, true);
         if (conf == null) {
             return null;
         }
